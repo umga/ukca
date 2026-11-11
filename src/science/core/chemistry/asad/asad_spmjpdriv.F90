@@ -269,6 +269,17 @@ IF (ukca_config%l_ukca_debug_asad) THEN
   CALL umPrint(umMessage,src='asad_spmjpdriv')
 END IF
 
+! ASADRANGE: min and max of y (state at end of solver call), one line per
+! species. Draft for the GC_Faster range study. Remove before any upstreaming.
+DO js = 1, jpspec
+  WRITE(umMessage,'(A,1X,I0,1X,A,2(1X,ES15.6E3),4(1X,I0))')                    &
+      'ASADRANGE y', js, TRIM(speci(js)),                                      &
+      MINVAL(y(1:n_points,js)), MAXVAL(y(1:n_points,js)),                      &
+      mype, ix, jy, nlev
+  CALL umPrint(umMessage,src='asad_spmjpdriv')
+END DO
+! end of added lines for GC_Faster project 
+
 ncsteps = ncsteps_initial
 cdt = cdt_initial
 
