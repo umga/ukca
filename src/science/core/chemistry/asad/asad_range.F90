@@ -9,6 +9,7 @@ MODULE asad_range_mod
 
 USE umPrintMgr,         ONLY: umMessage, umPrint
 USE ukca_um_legacy_mod, ONLY: mype
+USE, INTRINSIC :: iso_fortran_env, ONLY: real32
 
 IMPLICIT NONE
 PRIVATE
@@ -25,7 +26,7 @@ INTEGER, SAVE :: step_no = -1
 INTEGER, SAVE :: ymdh(4) = -1
 
 CHARACTER(LEN=*), PARAMETER :: fmt_line =                                      &
-  '(A,5(1X,I0),1X,A,1X,I0,1X,A,2(1X,ES15.6E3),4(1X,I0))'
+  '(A,5(1X,I0),1X,A,1X,I0,1X,A,2(1X,ES15.6E3),4(1X,I0),2(1X,ES15.6E3))'
 
 CONTAINS
 
@@ -68,7 +69,9 @@ DO j = 1, SIZE(arr, 2)
   IF (PRESENT(labels)) lab = labels(j)
   WRITE(umMessage, fmt_line) 'ASADRANGE', step_no, ymdh,                       &
         TRIM(array_name), j, TRIM(lab),                                        &
-        MINVAL(arr(:,j)), MAXVAL(arr(:,j)), mype, ix, jy, nlev
+        MINVAL(arr(:,j)), MAXVAL(arr(:,j)), mype, ix, jy, nlev,                &
+        REAL(MINVAL(arr(:,j)), KIND=real32),                                   &
+        REAL(MAXVAL(arr(:,j)), KIND=real32)
   CALL umPrint(umMessage, src='asad_range_mod')
 END DO
 
@@ -88,7 +91,8 @@ INTEGER,          INTENT(IN) :: nlev
 
 WRITE(umMessage, fmt_line) 'ASADRANGE', step_no, ymdh,                         &
       TRIM(array_name), 1, '-',                                                &
-      MINVAL(arr), MAXVAL(arr), mype, ix, jy, nlev
+      MINVAL(arr), MAXVAL(arr), mype, ix, jy, nlev,                            &
+      REAL(MINVAL(arr), KIND=real32), REAL(MAXVAL(arr), KIND=real32)
 CALL umPrint(umMessage, src='asad_range_mod')
 
 END SUBROUTINE asad_range_print_1d
