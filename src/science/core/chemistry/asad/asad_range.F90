@@ -16,6 +16,7 @@ PRIVATE
 
 PUBLIC :: asad_range_set_time, asad_range_print
 PUBLIC :: asad_range_reset, asad_range_track, asad_range_print_tracked
+PUBLIC :: asad_range_print_conv
 
 INTERFACE asad_range_print
   MODULE PROCEDURE asad_range_print_2d, asad_range_print_1d
@@ -181,5 +182,39 @@ DO j = 1, SIZE(labels)
 END DO
 
 END SUBROUTINE asad_range_print_tracked
+
+!------------------------------------------------------------------------------
+! Call at the end of the solver call: one ASADCONV line per call.
+! iredo0 = starting number of sub-steps, iredo = final number (it doubles at
+! every halving of the time step), n_calls = calls of asad_spimpmjp,
+! n_fail = failed calls, num_iter = iterations of all calls added up,
+! exit_code = code of the last call (0 = converged), the last number is 1 if
+! the solver gave up (no convergence after the maximum number of halvings).
+SUBROUTINE asad_range_print_conv(ix, jy, nlev, n_points, iredo0, iredo,       &
+                                 n_calls, n_fail, num_iter, exit_code,         &
+                                 l_noconv)
+
+IMPLICIT NONE
+
+INTEGER, INTENT(IN) :: ix
+INTEGER, INTENT(IN) :: jy
+INTEGER, INTENT(IN) :: nlev
+INTEGER, INTENT(IN) :: n_points
+INTEGER, INTENT(IN) :: iredo0
+INTEGER, INTENT(IN) :: iredo
+INTEGER, INTENT(IN) :: n_calls
+INTEGER, INTENT(IN) :: n_fail
+INTEGER, INTENT(IN) :: num_iter
+INTEGER, INTENT(IN) :: exit_code
+LOGICAL, INTENT(IN) :: l_noconv
+
+CHARACTER(LEN=*), PARAMETER :: fmt_conv = '(A,17(1X,I0))'
+
+WRITE(umMessage, fmt_conv) 'ASADCONV', step_no, ymdh,                          &
+      mype, ix, jy, nlev, n_points, iredo0, iredo, n_calls, n_fail,            &
+      num_iter, exit_code, MERGE(1, 0, l_noconv)
+CALL umPrint(umMessage, src='asad_range_mod')
+
+END SUBROUTINE asad_range_print_conv
 
 END MODULE asad_range_mod

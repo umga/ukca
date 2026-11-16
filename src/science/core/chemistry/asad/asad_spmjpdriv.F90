@@ -122,6 +122,7 @@ USE asad_spimpmjp_mod, ONLY: asad_spimpmjp
 USE asad_ftoy_mod, ONLY: asad_ftoy
 USE asad_range_mod, ONLY: asad_range_print, asad_range_reset,                  &
                           asad_range_track, asad_range_print_tracked
+USE asad_range_mod, ONLY: asad_range_print_conv
 
 IMPLICIT NONE
 
@@ -142,6 +143,9 @@ INTEGER :: location                 ! Array index for logging
 INTEGER :: solver_iter              ! Nonlinear solver iteration count
 INTEGER :: num_iter                 ! Total nonlinear solver iteration count
 INTEGER :: jit                      ! Iteration for asad_ftoy
+INTEGER :: n_calls                  ! Number of calls of asad_spimpmjp
+INTEGER :: n_fail                   ! Number of failed calls
+LOGICAL :: l_noconv                 ! .TRUE. if solver gave up
 
 INTEGER :: errcode                  ! Variable passed to ereport
 LOGICAL :: not_first_call = .FALSE.
@@ -183,15 +187,20 @@ CALL asad_range_track(y(1:n_points,:))
 
 ! Start iterations here.
 num_iter = 0
+n_calls = 0
+n_fail = 0
+l_noconv = .FALSE.
 iter = 1
 DO WHILE (iter <= iredo)
   CALL asad_spimpmjp(exit_code, ix, jy, nlev, n_points, location, solver_iter)
+  n_calls = n_calls + 1
   num_iter = num_iter + solver_iter
 
   IF (exit_code == 0) THEN
     ! Solver convergence
     iter = iter + 1
   ELSE
+    n_fail = n_fail + 1
     f(1:n_points,:)=f_initial(1:n_points,:)
 
     IF (exit_code == 4) THEN
@@ -241,6 +250,7 @@ DO WHILE (iter <= iredo)
               location,mype
           CALL umPrint(umMessage,src='asad_spmjpdriv')
         END IF
+        l_noconv = .TRUE.
         EXIT
       END IF
 
@@ -280,6 +290,8 @@ END IF
 ! species. Draft for the GC_Faster range study.
 CALL asad_range_print('y', y(1:n_points,:), speci, ix, jy, nlev)
 CALL asad_range_print_tracked('y', speci, ix, jy, nlev)
+CALL asad_range_print_conv(ix, jy, nlev, n_points, ncsteps_factor, iredo,      &
+                           n_calls, n_fail, num_iter, exit_code, l_noconv)
 ! end of added lines for GC_Faster project
 
 ncsteps = ncsteps_initial
