@@ -192,7 +192,7 @@ END SUBROUTINE asad_range_print_tracked
 ! the solver gave up (no convergence after the maximum number of halvings).
 SUBROUTINE asad_range_print_conv(ix, jy, nlev, n_points, iredo0, iredo,       &
                                  n_calls, n_fail, num_iter, exit_code,         &
-                                 l_noconv)
+                                 l_noconv, n_fail2, n_fail3)
 
 IMPLICIT NONE
 
@@ -207,12 +207,14 @@ INTEGER, INTENT(IN) :: n_fail
 INTEGER, INTENT(IN) :: num_iter
 INTEGER, INTENT(IN) :: exit_code
 LOGICAL, INTENT(IN) :: l_noconv
+INTEGER, INTENT(IN) :: n_fail2
+INTEGER, INTENT(IN) :: n_fail3
 
-CHARACTER(LEN=*), PARAMETER :: fmt_conv = '(A,17(1X,I0))'
+CHARACTER(LEN=*), PARAMETER :: fmt_conv = '(A,19(1X,I0))'
 
 WRITE(umMessage, fmt_conv) 'ASADCONV', step_no, ymdh,                          &
       mype, ix, jy, nlev, n_points, iredo0, iredo, n_calls, n_fail,            &
-      num_iter, exit_code, MERGE(1, 0, l_noconv)
+      num_iter, exit_code, MERGE(1, 0, l_noconv), n_fail2, n_fail3
 CALL umPrint(umMessage, src='asad_range_mod')
 
 END SUBROUTINE asad_range_print_conv

@@ -145,6 +145,8 @@ INTEGER :: num_iter                 ! Total nonlinear solver iteration count
 INTEGER :: jit                      ! Iteration for asad_ftoy
 INTEGER :: n_calls                  ! Number of calls of asad_spimpmjp
 INTEGER :: n_fail                   ! Number of failed calls
+INTEGER :: n_fail2                  ! Failed calls with exit code 2
+INTEGER :: n_fail3                  ! Failed calls with exit code 3
 LOGICAL :: l_noconv                 ! .TRUE. if solver gave up
 
 INTEGER :: errcode                  ! Variable passed to ereport
@@ -189,6 +191,8 @@ CALL asad_range_track(y(1:n_points,:))
 num_iter = 0
 n_calls = 0
 n_fail = 0
+n_fail2 = 0
+n_fail3 = 0
 l_noconv = .FALSE.
 iter = 1
 DO WHILE (iter <= iredo)
@@ -201,6 +205,8 @@ DO WHILE (iter <= iredo)
     iter = iter + 1
   ELSE
     n_fail = n_fail + 1
+    IF (exit_code == 2) n_fail2 = n_fail2 + 1
+    IF (exit_code == 3) n_fail3 = n_fail3 + 1
     f(1:n_points,:)=f_initial(1:n_points,:)
 
     IF (exit_code == 4) THEN
@@ -291,7 +297,8 @@ END IF
 CALL asad_range_print('y', y(1:n_points,:), speci, ix, jy, nlev)
 CALL asad_range_print_tracked('y', speci, ix, jy, nlev)
 CALL asad_range_print_conv(ix, jy, nlev, n_points, ncsteps_factor, iredo,      &
-                           n_calls, n_fail, num_iter, exit_code, l_noconv)
+                           n_calls, n_fail, num_iter, exit_code, l_noconv,     &
+                           n_fail2, n_fail3)
 ! end of added lines for GC_Faster project
 
 ncsteps = ncsteps_initial
