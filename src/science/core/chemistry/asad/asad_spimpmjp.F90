@@ -270,6 +270,7 @@ USE asad_diffun_mod,    ONLY: asad_diffun
 USE asad_fuljac_mod,    ONLY: asad_fuljac
 USE asad_steady_mod,    ONLY: asad_steady
 USE asad_ftoy_mod,      ONLY: asad_ftoy
+USE asad_range_mod,     ONLY: asad_range_track
 
 IMPLICIT NONE
 
@@ -391,6 +392,7 @@ DO iter=1,ukca_config%nrsteps
   CALL asad_ftoy(not_first_call, ifi, iter, n_points, ix, jy, nlev)
 
   IF (nstst /= 0 .AND. ifi ==0) CALL asad_steady( n_points )
+  CALL asad_range_track(y(1:n_points,:))
 
   IF (ltrig .AND. printstatus >= prstatus_oper) THEN
     DO jl=1,n_points
@@ -553,6 +555,7 @@ DO iter=1,ukca_config%nrsteps
 
       CALL asad_ftoy(not_first_call,ifi, iter, n_points, ix, jy, nlev)
       CALL asad_steady(n_points)
+      CALL asad_range_track(y(1:n_points,:))
       CALL asad_diffun(n_points) ! updates fdot
 
       G_f_old = G_f

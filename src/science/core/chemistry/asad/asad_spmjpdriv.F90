@@ -120,7 +120,8 @@ USE errormessagelength_mod, ONLY: errormessagelength
 USE asad_diffun_mod, ONLY: asad_diffun
 USE asad_spimpmjp_mod, ONLY: asad_spimpmjp
 USE asad_ftoy_mod, ONLY: asad_ftoy
-USE asad_range_mod, ONLY: asad_range_print
+USE asad_range_mod, ONLY: asad_range_print, asad_range_reset,                  &
+                          asad_range_track, asad_range_print_tracked
 
 IMPLICIT NONE
 
@@ -175,6 +176,10 @@ ELSE IF (ukca_config%l_ukca_asad_columns) THEN
 ELSE
   location = nlev
 END IF
+
+! ASADTRACK: start of tracking for this solver call (y at entry)
+CALL asad_range_reset()
+CALL asad_range_track(y(1:n_points,:))
 
 ! Start iterations here.
 num_iter = 0
@@ -245,6 +250,7 @@ DO WHILE (iter <= iredo)
     jit = 0
     CALL asad_ftoy( not_first_call, nitfg, jit, n_points, ix, jy, nlev )
     CALL asad_diffun( n_points )
+    CALL asad_range_track(y(1:n_points,:))
     iter = 1
 
   END IF
@@ -273,6 +279,7 @@ END IF
 ! ASADRANGE: min and max of y (state at end of solver call), one line per
 ! species. Draft for the GC_Faster range study.
 CALL asad_range_print('y', y(1:n_points,:), speci, ix, jy, nlev)
+CALL asad_range_print_tracked('y', speci, ix, jy, nlev)
 ! end of added lines for GC_Faster project
 
 ncsteps = ncsteps_initial

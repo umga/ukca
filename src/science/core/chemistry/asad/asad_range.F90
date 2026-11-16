@@ -15,6 +15,7 @@ IMPLICIT NONE
 PRIVATE
 
 PUBLIC :: asad_range_set_time, asad_range_print
+PUBLIC :: asad_range_reset, asad_range_track, asad_range_print_tracked
 
 INTERFACE asad_range_print
   MODULE PROCEDURE asad_range_print_2d, asad_range_print_1d
@@ -27,6 +28,25 @@ INTEGER, SAVE :: ymdh(4) = -1
 
 CHARACTER(LEN=*), PARAMETER :: fmt_line =                                      &
   '(A,5(1X,I0),1X,A,1X,I0,1X,A,2(1X,ES15.6E3),4(1X,I0),2(1X,ES15.6E3))'
+
+! Running min and max of y during one solver call (one copy per thread)
+INTEGER, PARAMETER :: maxsp = 400
+REAL, PARAMETER    :: tiny32 = TINY(1.0_real32)
+REAL, PARAMETER    :: huge32 = HUGE(1.0_real32)
+REAL, PARAMETER    :: big    = HUGE(1.0)
+
+REAL, SAVE    :: trk_min(maxsp)
+REAL, SAVE    :: trk_max(maxsp)
+INTEGER, SAVE :: trk_nzero(maxsp)
+INTEGER, SAVE :: trk_nsmall(maxsp)
+INTEGER, SAVE :: trk_nbig(maxsp)
+INTEGER, SAVE :: trk_nneg(maxsp)
+INTEGER, SAVE :: trk_nsnap
+!$OMP THREADPRIVATE(trk_min, trk_max, trk_nzero, trk_nsmall, trk_nbig,         &
+!$OMP               trk_nneg, trk_nsnap)
+
+CHARACTER(LEN=*), PARAMETER :: fmt_trk =                                       &
+  '(A,5(1X,I0),1X,A,1X,I0,1X,A,2(1X,ES15.6E3),4(1X,I0),2(1X,ES15.6E3),5(1X,I0))'
 
 CONTAINS
 
@@ -96,5 +116,70 @@ WRITE(umMessage, fmt_line) 'ASADRANGE', step_no, ymdh,                         &
 CALL umPrint(umMessage, src='asad_range_mod')
 
 END SUBROUTINE asad_range_print_1d
+
+!------------------------------------------------------------------------------
+! Call at the start of every solver call: sets min, max and counters to start.
+SUBROUTINE asad_range_reset()
+
+IMPLICIT NONE
+
+trk_min(:)    = big
+trk_max(:)    = -big
+trk_nzero(:)  = 0
+trk_nsmall(:) = 0
+trk_nbig(:)   = 0
+trk_nneg(:)   = 0
+trk_nsnap     = 0
+
+END SUBROUTINE asad_range_reset
+
+!------------------------------------------------------------------------------
+! Call every time y has been recalculated: updates min, max and counters.
+! The counters count values (points) over all snapshots of one solver call.
+SUBROUTINE asad_range_track(arr)
+
+IMPLICIT NONE
+
+REAL, INTENT(IN) :: arr(:,:)
+
+INTEGER :: j
+
+DO j = 1, SIZE(arr, 2)
+  trk_min(j) = MIN(trk_min(j), MINVAL(arr(:,j)))
+  trk_max(j) = MAX(trk_max(j), MAXVAL(arr(:,j)))
+  trk_nzero(j)  = trk_nzero(j)  + COUNT(arr(:,j) == 0.0)
+  trk_nsmall(j) = trk_nsmall(j) +                                              &
+                  COUNT(arr(:,j) > 0.0 .AND. arr(:,j) < tiny32)
+  trk_nbig(j)   = trk_nbig(j)   + COUNT(arr(:,j) > huge32)
+  trk_nneg(j)   = trk_nneg(j)   + COUNT(arr(:,j) < 0.0)
+END DO
+trk_nsnap = trk_nsnap + 1
+
+END SUBROUTINE asad_range_track
+
+!------------------------------------------------------------------------------
+! Call at the end of the solver call: one ASADTRACK line per species.
+SUBROUTINE asad_range_print_tracked(array_name, labels, ix, jy, nlev)
+
+IMPLICIT NONE
+
+CHARACTER(LEN=*), INTENT(IN) :: array_name
+CHARACTER(LEN=*), INTENT(IN) :: labels(:)
+INTEGER,          INTENT(IN) :: ix
+INTEGER,          INTENT(IN) :: jy
+INTEGER,          INTENT(IN) :: nlev
+
+INTEGER :: j
+
+DO j = 1, SIZE(labels)
+  WRITE(umMessage, fmt_trk) 'ASADTRACK', step_no, ymdh,                        &
+        TRIM(array_name), j, TRIM(labels(j)),                                  &
+        trk_min(j), trk_max(j), mype, ix, jy, nlev,                            &
+        REAL(trk_min(j), KIND=real32), REAL(trk_max(j), KIND=real32),          &
+        trk_nsnap, trk_nzero(j), trk_nsmall(j), trk_nbig(j), trk_nneg(j)
+  CALL umPrint(umMessage, src='asad_range_mod')
+END DO
+
+END SUBROUTINE asad_range_print_tracked
 
 END MODULE asad_range_mod
