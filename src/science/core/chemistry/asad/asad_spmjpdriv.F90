@@ -106,7 +106,7 @@ CONTAINS
 SUBROUTINE asad_spmjpdriv(ix,jy,nlev,n_points)
 
 USE asad_mod, ONLY: cdt, f, jpcspf, jpspec, ltrig,                             &
-                    ncsteps, ncsteps_factor, nitfg, speci, y
+                    ncsteps, ncsteps_factor, nitfg, speci, specf, y
 USE ukca_config_specification_mod, ONLY: ukca_config
 USE parkind1, ONLY: jprb, jpim
 USE yomhook, ONLY: lhook, dr_hook
@@ -122,7 +122,8 @@ USE asad_spimpmjp_mod, ONLY: asad_spimpmjp
 USE asad_ftoy_mod, ONLY: asad_ftoy
 USE asad_range_mod, ONLY: asad_range_print, asad_range_reset,                  &
                           asad_range_track, asad_range_print_tracked
-USE asad_range_mod, ONLY: asad_range_print_conv, asad_range_accumulate
+USE asad_range_mod, ONLY: asad_range_print_conv, asad_range_accumulate,        &
+                          asad_range_accumulate_rates
 
 IMPLICIT NONE
 
@@ -297,6 +298,7 @@ END IF
 ! species. Draft for the GC_Faster range study.
 CALL asad_range_accumulate(y(1:n_points,:), speci, nlev, num_iter, n_fail,     &
                            n_fail2, n_fail3, l_noconv, l_event)
+CALL asad_range_accumulate_rates(speci, specf, nlev, n_points)
 IF (l_event) THEN
   CALL asad_range_print('y', y(1:n_points,:), speci, ix, jy, nlev)
   CALL asad_range_print_tracked('y', speci, ix, jy, nlev)

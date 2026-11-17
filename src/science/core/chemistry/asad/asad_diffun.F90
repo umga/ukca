@@ -80,6 +80,7 @@ USE asad_mod,               ONLY: fdot, ydot, prod, slos,                      &
 USE parkind1, ONLY: jprb, jpim
 USE yomhook, ONLY: lhook, dr_hook
 USE asad_prls_mod, ONLY: asad_prls
+USE asad_range_mod, ONLY: asad_range_track_rates
 IMPLICIT NONE
 
 INTEGER, INTENT(IN) :: kl      ! No of spatial points
@@ -147,6 +148,9 @@ DO j = 1, nf
 
   END DO
 END DO
+
+! GC_Faster range study: min, max and counts of prod, slos and fdot
+CALL asad_range_track_rates(prod(1:kl,:), slos(1:kl,:), fdot(1:kl,:))
 
 IF (lhook) CALL dr_hook(ModuleName//':'//RoutineName,zhook_out,zhook_handle)
 RETURN

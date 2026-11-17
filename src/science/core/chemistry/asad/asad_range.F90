@@ -18,6 +18,7 @@ PUBLIC :: asad_range_set_time, asad_range_print
 PUBLIC :: asad_range_reset, asad_range_track, asad_range_print_tracked
 PUBLIC :: asad_range_print_conv
 PUBLIC :: asad_range_accumulate, asad_range_flush
+PUBLIC :: asad_range_track_rates, asad_range_accumulate_rates
 
 INTERFACE asad_range_print
   MODULE PROCEDURE asad_range_print_2d, asad_range_print_1d
@@ -82,6 +83,35 @@ LOGICAL, SAVE :: acc_init = .FALSE.
 CHARACTER(LEN=*), PARAMETER :: fmt_lev =                                       &
   '(A,5(1X,I0),1X,A,2(1X,I0),4(1X,ES15.6E3),5(1X,I0),2(1X,ES24.14E3))'
 CHARACTER(LEN=*), PARAMETER :: fmt_lvl = '(A,15(1X,I0))'
+
+! prod (1), slos (2) and fdot (3) tracked through the solver call, one copy
+! per OpenMP thread (like trk_*)
+INTEGER, PARAMETER :: nrt = 3
+REAL, SAVE    :: rt_min(maxsp,nrt)
+REAL, SAVE    :: rt_max(maxsp,nrt)
+INTEGER, SAVE :: rt_nzero(maxsp,nrt)
+INTEGER, SAVE :: rt_nsmall(maxsp,nrt)
+INTEGER, SAVE :: rt_nbig(maxsp,nrt)
+INTEGER, SAVE :: rt_nneg(maxsp,nrt)
+INTEGER, SAVE :: rt_n(nrt)
+INTEGER, SAVE :: rt_nsnap
+!$OMP THREADPRIVATE(rt_min, rt_max, rt_nzero, rt_nsmall, rt_nbig, rt_nneg,     &
+!$OMP               rt_n, rt_nsnap)
+
+! Tables by level for the three arrays, kept over a period (like acc_*)
+REAL, SAVE    :: acr_tmin(maxlev,maxsp,nrt)
+REAL, SAVE    :: acr_tmax(maxlev,maxsp,nrt)
+INTEGER, SAVE :: acr_nzero(maxlev,maxsp,nrt)
+INTEGER, SAVE :: acr_nsmall(maxlev,maxsp,nrt)
+INTEGER, SAVE :: acr_nbig(maxlev,maxsp,nrt)
+INTEGER, SAVE :: acr_nneg(maxlev,maxsp,nrt)
+INTEGER, SAVE :: lev_nrate(maxlev)
+CHARACTER(LEN=20), SAVE :: acr_label(maxsp,nrt) = ' '
+INTEGER, SAVE :: acr_nsp(nrt) = 0
+CHARACTER(LEN=7), PARAMETER :: rt_tag(nrt) =                                   &
+  [CHARACTER(LEN=7) :: 'ASADPRD', 'ASADSLS', 'ASADFDT']
+CHARACTER(LEN=*), PARAMETER :: fmt_rt =                                        &
+  '(A,5(1X,I0),1X,A,2(1X,I0),2(1X,ES15.6E3),5(1X,I0))'
 
 CONTAINS
 
@@ -169,6 +199,14 @@ trk_nsmall(:) = 0
 trk_nbig(:)   = 0
 trk_nneg(:)   = 0
 trk_nsnap     = 0
+rt_min(:,:)    = big
+rt_max(:,:)    = -big
+rt_nzero(:,:)  = 0
+rt_nsmall(:,:) = 0
+rt_nbig(:,:)   = 0
+rt_nneg(:,:)   = 0
+rt_n(:)        = 0
+rt_nsnap       = 0
 
 END SUBROUTINE asad_range_reset
 
@@ -281,6 +319,13 @@ lev_nfailcalls(:) = 0
 lev_nf2(:)       = 0
 lev_nf3(:)       = 0
 lev_nnoconv(:)   = 0
+acr_tmin(:,:,:)   = big
+acr_tmax(:,:,:)   = -big
+acr_nzero(:,:,:)  = 0
+acr_nsmall(:,:,:) = 0
+acr_nbig(:,:,:)   = 0
+acr_nneg(:,:,:)   = 0
+lev_nrate(:)      = 0
 
 END SUBROUTINE asad_range_acc_reset
 
@@ -361,6 +406,7 @@ IMPLICIT NONE
 
 INTEGER :: lev
 INTEGER :: j
+INTEGER :: id
 
 IF (MOD(step_no, period_steps) /= 0) RETURN
 
@@ -379,10 +425,117 @@ DO lev = 1, maxlev
           acc_sumlog(lev,j), acc_sumlog2(lev,j)
     CALL umPrint(umMessage, src='asad_range_mod')
   END DO
+  DO id = 1, nrt
+    DO j = 1, acr_nsp(id)
+      WRITE(umMessage, fmt_rt) rt_tag(id), step_no, ymdh,                      &
+            TRIM(acr_label(j,id)), lev, mype,                                  &
+            acr_tmin(lev,j,id), acr_tmax(lev,j,id),                            &
+            acr_nzero(lev,j,id), acr_nsmall(lev,j,id), acr_nbig(lev,j,id),     &
+            acr_nneg(lev,j,id), lev_nrate(lev)
+      CALL umPrint(umMessage, src='asad_range_mod')
+    END DO
+  END DO
 END DO
 
 CALL asad_range_acc_reset()
 
 END SUBROUTINE asad_range_flush
+
+!------------------------------------------------------------------------------
+! Track one rate array (id = 1 prod, 2 slos, 3 fdot) for one iteration.
+! Counts use the absolute value; min and max keep the sign.
+SUBROUTINE asad_range_track_one(id, arr)
+
+IMPLICIT NONE
+
+INTEGER, INTENT(IN) :: id
+REAL,    INTENT(IN) :: arr(:,:)
+
+INTEGER :: j
+INTEGER :: nsp
+
+nsp = MIN(SIZE(arr, 2), maxsp)
+rt_n(id) = nsp
+DO j = 1, nsp
+  rt_min(j,id) = MIN(rt_min(j,id), MINVAL(arr(:,j)))
+  rt_max(j,id) = MAX(rt_max(j,id), MAXVAL(arr(:,j)))
+  rt_nzero(j,id)  = rt_nzero(j,id)  + COUNT(arr(:,j) == 0.0)
+  rt_nsmall(j,id) = rt_nsmall(j,id) +                                          &
+        COUNT(ABS(arr(:,j)) > 0.0 .AND. ABS(arr(:,j)) < tiny32)
+  rt_nbig(j,id)   = rt_nbig(j,id)   + COUNT(ABS(arr(:,j)) > huge32)
+  rt_nneg(j,id)   = rt_nneg(j,id)   + COUNT(arr(:,j) < 0.0)
+END DO
+
+END SUBROUTINE asad_range_track_one
+
+!------------------------------------------------------------------------------
+! Called at the end of asad_diffun: prod, slos and fdot of this iteration.
+SUBROUTINE asad_range_track_rates(p_arr, l_arr, d_arr)
+
+IMPLICIT NONE
+
+REAL, INTENT(IN) :: p_arr(:,:)
+REAL, INTENT(IN) :: l_arr(:,:)
+REAL, INTENT(IN) :: d_arr(:,:)
+
+CALL asad_range_track_one(1, p_arr)
+CALL asad_range_track_one(2, l_arr)
+CALL asad_range_track_one(3, d_arr)
+rt_nsnap = rt_nsnap + 1
+
+END SUBROUTINE asad_range_track_rates
+
+!------------------------------------------------------------------------------
+! Called at the end of every solver call (after asad_range_accumulate): adds
+! the tracked prod, slos and fdot of this call to the tables of its level.
+SUBROUTINE asad_range_accumulate_rates(labels_s, labels_f, nlev, npts)
+
+IMPLICIT NONE
+
+CHARACTER(LEN=*), INTENT(IN) :: labels_s(:)
+CHARACTER(LEN=*), INTENT(IN) :: labels_f(:)
+INTEGER,          INTENT(IN) :: nlev
+INTEGER,          INTENT(IN) :: npts
+
+INTEGER :: id
+INTEGER :: j
+INTEGER :: nn
+
+IF (nlev < 1 .OR. nlev > maxlev) RETURN
+IF (rt_nsnap == 0) RETURN
+
+DO id = 1, nrt
+  IF (id < 3) THEN
+    nn = MIN(rt_n(id), SIZE(labels_s))
+  ELSE
+    nn = MIN(rt_n(id), SIZE(labels_f))
+  END IF
+  IF (acr_nsp(id) == 0) THEN
+!$OMP CRITICAL (asad_range_labels_rt)
+    IF (acr_nsp(id) == 0) THEN
+      DO j = 1, nn
+        IF (id < 3) THEN
+          acr_label(j,id) = labels_s(j)
+        ELSE
+          acr_label(j,id) = labels_f(j)
+        END IF
+      END DO
+      acr_nsp(id) = nn
+    END IF
+!$OMP END CRITICAL (asad_range_labels_rt)
+  END IF
+  DO j = 1, nn
+    acr_tmin(nlev,j,id) = MIN(acr_tmin(nlev,j,id), rt_min(j,id))
+    acr_tmax(nlev,j,id) = MAX(acr_tmax(nlev,j,id), rt_max(j,id))
+    acr_nzero(nlev,j,id)  = acr_nzero(nlev,j,id)  + rt_nzero(j,id)
+    acr_nsmall(nlev,j,id) = acr_nsmall(nlev,j,id) + rt_nsmall(j,id)
+    acr_nbig(nlev,j,id)   = acr_nbig(nlev,j,id)   + rt_nbig(j,id)
+    acr_nneg(nlev,j,id)   = acr_nneg(nlev,j,id)   + rt_nneg(j,id)
+  END DO
+END DO
+
+lev_nrate(nlev) = lev_nrate(nlev) + rt_nsnap * npts
+
+END SUBROUTINE asad_range_accumulate_rates
 
 END MODULE asad_range_mod
