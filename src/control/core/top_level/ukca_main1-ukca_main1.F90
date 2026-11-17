@@ -220,7 +220,7 @@ USE ukca_chem_diags_mod,    ONLY: ukca_chem_diags
 USE ukca_chemistry_ctl_mod, ONLY: ukca_chemistry_ctl
 USE ukca_chemistry_ctl_col_mod, ONLY: ukca_chemistry_ctl_col
 USE ukca_chemistry_ctl_full_mod, ONLY: ukca_chemistry_ctl_full
-USE asad_range_mod,         ONLY: asad_range_set_time
+USE asad_range_mod,         ONLY: asad_range_set_time, asad_range_flush
 USE ukca_activate_mod,      ONLY: ukca_activate
 USE ukca_aero_ctl_mod,      ONLY: ukca_aero_ctl
 USE ukca_mode_diags_mod,    ONLY: ukca_mode_diags_alloc, ukca_mode_diags,      &
@@ -2451,6 +2451,9 @@ IF (ukca_config%l_ukca_chem) THEN
            l_firstchem                                                         &
            )
     END IF
+
+    ! GC_Faster range study: print and reset the tables at the end of a period
+    CALL asad_range_flush()
 
     ! ASAD post-processing
     IF (.NOT. ukca_config%l_ukca_offline_be) THEN

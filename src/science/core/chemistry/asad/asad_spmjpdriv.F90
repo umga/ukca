@@ -122,7 +122,7 @@ USE asad_spimpmjp_mod, ONLY: asad_spimpmjp
 USE asad_ftoy_mod, ONLY: asad_ftoy
 USE asad_range_mod, ONLY: asad_range_print, asad_range_reset,                  &
                           asad_range_track, asad_range_print_tracked
-USE asad_range_mod, ONLY: asad_range_print_conv
+USE asad_range_mod, ONLY: asad_range_print_conv, asad_range_accumulate
 
 IMPLICIT NONE
 
@@ -148,6 +148,7 @@ INTEGER :: n_fail                   ! Number of failed calls
 INTEGER :: n_fail2                  ! Failed calls with exit code 2
 INTEGER :: n_fail3                  ! Failed calls with exit code 3
 LOGICAL :: l_noconv                 ! .TRUE. if solver gave up
+LOGICAL :: l_event                  ! .TRUE. if this call gets the per-call lines
 
 INTEGER :: errcode                  ! Variable passed to ereport
 LOGICAL :: not_first_call = .FALSE.
@@ -294,11 +295,15 @@ END IF
 
 ! ASADRANGE: min and max of y (state at end of solver call), one line per
 ! species. Draft for the GC_Faster range study.
-CALL asad_range_print('y', y(1:n_points,:), speci, ix, jy, nlev)
-CALL asad_range_print_tracked('y', speci, ix, jy, nlev)
-CALL asad_range_print_conv(ix, jy, nlev, n_points, ncsteps_factor, iredo,      &
-                           n_calls, n_fail, num_iter, exit_code, l_noconv,     &
-                           n_fail2, n_fail3)
+CALL asad_range_accumulate(y(1:n_points,:), speci, nlev, num_iter, n_fail,     &
+                           n_fail2, n_fail3, l_noconv, l_event)
+IF (l_event) THEN
+  CALL asad_range_print('y', y(1:n_points,:), speci, ix, jy, nlev)
+  CALL asad_range_print_tracked('y', speci, ix, jy, nlev)
+  CALL asad_range_print_conv(ix, jy, nlev, n_points, ncsteps_factor, iredo,    &
+                             n_calls, n_fail, num_iter, exit_code, l_noconv,   &
+                             n_fail2, n_fail3)
+END IF
 ! end of added lines for GC_Faster project
 
 ncsteps = ncsteps_initial
