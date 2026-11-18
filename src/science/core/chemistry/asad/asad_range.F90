@@ -10,6 +10,8 @@ MODULE asad_range_mod
 USE umPrintMgr,         ONLY: umMessage, umPrint
 USE ukca_um_legacy_mod, ONLY: mype
 USE, INTRINSIC :: iso_fortran_env, ONLY: real32
+USE asad_mod, ONLY: jpbk, jptk, jppj, jphk, nbrkx, ntrkx, nprkx, nhrkx,        &
+                    spb, spt, spj, sph
 
 IMPLICIT NONE
 PRIVATE
@@ -19,6 +21,7 @@ PUBLIC :: asad_range_reset, asad_range_track, asad_range_print_tracked
 PUBLIC :: asad_range_print_conv
 PUBLIC :: asad_range_accumulate, asad_range_flush
 PUBLIC :: asad_range_track_rates, asad_range_accumulate_rates
+PUBLIC :: asad_range_accumulate_rk
 
 INTERFACE asad_range_print
   MODULE PROCEDURE asad_range_print_2d, asad_range_print_1d
@@ -112,6 +115,18 @@ CHARACTER(LEN=7), PARAMETER :: rt_tag(nrt) =                                   &
   [CHARACTER(LEN=7) :: 'ASADPRD', 'ASADSLS', 'ASADFDT']
 CHARACTER(LEN=*), PARAMETER :: fmt_rt =                                        &
   '(A,5(1X,I0),1X,A,2(1X,I0),2(1X,ES15.6E3),5(1X,I0))'
+
+! rk (rate coefficients) by level and reaction, kept over a period
+INTEGER, PARAMETER :: maxrx = 1500
+REAL, SAVE    :: rk_tmin(maxlev,maxrx)
+REAL, SAVE    :: rk_tmax(maxlev,maxrx)
+INTEGER, SAVE :: rk_nzero(maxlev,maxrx)
+INTEGER, SAVE :: rk_nsmall(maxlev,maxrx)
+INTEGER, SAVE :: rk_nbig(maxlev,maxrx)
+INTEGER, SAVE :: rk_nneg(maxlev,maxrx)
+INTEGER, SAVE :: rk_nval(maxlev)
+CHARACTER(LEN=64), SAVE :: rk_label(maxrx) = ' '
+INTEGER, SAVE :: rk_nrx = 0
 
 CONTAINS
 
@@ -326,6 +341,13 @@ acr_nsmall(:,:,:) = 0
 acr_nbig(:,:,:)   = 0
 acr_nneg(:,:,:)   = 0
 lev_nrate(:)      = 0
+rk_tmin(:,:)      = big
+rk_tmax(:,:)      = -big
+rk_nzero(:,:)     = 0
+rk_nsmall(:,:)    = 0
+rk_nbig(:,:)      = 0
+rk_nneg(:,:)      = 0
+rk_nval(:)        = 0
 
 END SUBROUTINE asad_range_acc_reset
 
@@ -435,6 +457,15 @@ DO lev = 1, maxlev
       CALL umPrint(umMessage, src='asad_range_mod')
     END DO
   END DO
+  DO j = 1, rk_nrx
+    IF (rk_label(j) == ' ') CYCLE
+    WRITE(umMessage, fmt_rt) 'ASADRK ', step_no, ymdh,                         &
+          TRIM(rk_label(j)), lev, mype,                                        &
+          rk_tmin(lev,j), rk_tmax(lev,j),                                      &
+          rk_nzero(lev,j), rk_nsmall(lev,j), rk_nbig(lev,j),                   &
+          rk_nneg(lev,j), rk_nval(lev)
+    CALL umPrint(umMessage, src='asad_range_mod')
+  END DO
 END DO
 
 CALL asad_range_acc_reset()
@@ -537,5 +568,83 @@ END DO
 lev_nrate(nlev) = lev_nrate(nlev) + rt_nsnap * npts
 
 END SUBROUTINE asad_range_accumulate_rates
+!------------------------------------------------------------------------------
+! Label of one reaction: <jr>:<type>:<r1>+<r2>><p1>+<p2>
+SUBROUTINE asad_range_set_rk_label(jr, ktype, s1, s2, s3, s4)
+
+IMPLICIT NONE
+
+INTEGER,          INTENT(IN) :: jr
+CHARACTER(LEN=1), INTENT(IN) :: ktype
+CHARACTER(LEN=*), INTENT(IN) :: s1
+CHARACTER(LEN=*), INTENT(IN) :: s2
+CHARACTER(LEN=*), INTENT(IN) :: s3
+CHARACTER(LEN=*), INTENT(IN) :: s4
+
+CHARACTER(LEN=8) :: idx
+
+IF (jr < 1 .OR. jr > maxrx) RETURN
+WRITE(idx, '(I0)') jr
+rk_label(jr) = TRIM(idx)//':'//ktype//':'//TRIM(s1)//'+'//TRIM(s2)//           &
+               '>'//TRIM(s3)//'+'//TRIM(s4)
+
+END SUBROUTINE asad_range_set_rk_label
+
+!------------------------------------------------------------------------------
+! Called once per solver call at the entry of asad_spmjpdriv: min, max and
+! counts of the rate coefficients rk(:,reaction) of this call, added to the
+! tables of its level. rk is computed before the integrator (asad_cdrive)
+! and does not change during the iterations.
+SUBROUTINE asad_range_accumulate_rk(rk_arr, nlev, npts)
+
+IMPLICIT NONE
+
+REAL,    INTENT(IN) :: rk_arr(:,:)
+INTEGER, INTENT(IN) :: nlev
+INTEGER, INTENT(IN) :: npts
+
+INTEGER :: j
+INTEGER :: nn
+
+IF (nlev < 1 .OR. nlev > maxlev) RETURN
+nn = MIN(SIZE(rk_arr, 2), maxrx)
+
+IF (rk_nrx == 0) THEN
+!$OMP CRITICAL (asad_range_labels_rk)
+  IF (rk_nrx == 0) THEN
+    rk_label(:) = ' '
+    DO j = 1, jpbk
+      CALL asad_range_set_rk_label(nbrkx(j), 'B', spb(j,1), spb(j,2),          &
+                                   spb(j,3), spb(j,4))
+    END DO
+    DO j = 1, jptk
+      CALL asad_range_set_rk_label(ntrkx(j), 'T', spt(j,1), spt(j,2),          &
+                                   spt(j,3), spt(j,4))
+    END DO
+    DO j = 1, jppj
+      CALL asad_range_set_rk_label(nprkx(j), 'J', spj(j,1), spj(j,2),          &
+                                   spj(j,3), spj(j,4))
+    END DO
+    DO j = 1, jphk
+      CALL asad_range_set_rk_label(nhrkx(j), 'H', sph(j,1), sph(j,2),          &
+                                   sph(j,3), sph(j,4))
+    END DO
+    rk_nrx = nn
+  END IF
+!$OMP END CRITICAL (asad_range_labels_rk)
+END IF
+
+DO j = 1, nn
+  rk_tmin(nlev,j) = MIN(rk_tmin(nlev,j), MINVAL(rk_arr(1:npts,j)))
+  rk_tmax(nlev,j) = MAX(rk_tmax(nlev,j), MAXVAL(rk_arr(1:npts,j)))
+  rk_nzero(nlev,j)  = rk_nzero(nlev,j)  + COUNT(rk_arr(1:npts,j) == 0.0)
+  rk_nsmall(nlev,j) = rk_nsmall(nlev,j) +                                      &
+        COUNT(ABS(rk_arr(1:npts,j)) > 0.0 .AND. ABS(rk_arr(1:npts,j)) < tiny32)
+  rk_nbig(nlev,j)   = rk_nbig(nlev,j)   + COUNT(ABS(rk_arr(1:npts,j)) > huge32)
+  rk_nneg(nlev,j)   = rk_nneg(nlev,j)   + COUNT(rk_arr(1:npts,j) < 0.0)
+END DO
+rk_nval(nlev) = rk_nval(nlev) + npts
+
+END SUBROUTINE asad_range_accumulate_rk
 
 END MODULE asad_range_mod

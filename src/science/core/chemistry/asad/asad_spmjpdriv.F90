@@ -106,7 +106,8 @@ CONTAINS
 SUBROUTINE asad_spmjpdriv(ix,jy,nlev,n_points)
 
 USE asad_mod, ONLY: cdt, f, jpcspf, jpspec, ltrig,                             &
-                    ncsteps, ncsteps_factor, nitfg, speci, specf, y
+                    ncsteps, ncsteps_factor, nitfg, speci, specf, y,           &
+                    rk, jpnr
 USE ukca_config_specification_mod, ONLY: ukca_config
 USE parkind1, ONLY: jprb, jpim
 USE yomhook, ONLY: lhook, dr_hook
@@ -123,7 +124,7 @@ USE asad_ftoy_mod, ONLY: asad_ftoy
 USE asad_range_mod, ONLY: asad_range_print, asad_range_reset,                  &
                           asad_range_track, asad_range_print_tracked
 USE asad_range_mod, ONLY: asad_range_print_conv, asad_range_accumulate,        &
-                          asad_range_accumulate_rates
+                          asad_range_accumulate_rates, asad_range_accumulate_rk
 
 IMPLICIT NONE
 
@@ -188,6 +189,9 @@ END IF
 ! ASADTRACK: start of tracking for this solver call (y at entry)
 CALL asad_range_reset()
 CALL asad_range_track(y(1:n_points,:))
+
+! ASADRK: rate coefficients of all reactions (computed before the iterations)
+CALL asad_range_accumulate_rk(rk(1:n_points,1:jpnr), nlev, n_points)
 
 ! Start iterations here.
 num_iter = 0
